@@ -37,6 +37,7 @@ const scenarios: Array<{ value: CheckoutScenario; label: string; result: string 
 ];
 
 const checkoutApi = import.meta.env.VITE_CRASHLENS_API_URL ?? "http://localhost:4000";
+const dashboardUrl = import.meta.env.VITE_CRASHLENS_DASHBOARD_URL ?? "http://localhost:3000";
 
 function testError(message: string): Error {
   return new Error(message);
@@ -246,7 +247,7 @@ export default function App() {
           <article><span>01 · GROUPING</span><h3>Same failure × 5</h3><p>One issue should contain five occurrences instead of creating five duplicate issues.</p><button disabled={Boolean(suiteRunning)} onClick={() => void runGroupingTest()}>{suiteRunning === "grouping" ? "Running…" : "Run grouping test"}</button></article>
           <article><span>02 · USERS</span><h3>Five affected customers</h3><p>One shared issue should show five events and five unique affected users.</p><button disabled={Boolean(suiteRunning)} onClick={() => void runMultiUserTest()}>{suiteRunning === "users" ? "Running…" : "Run multi-user test"}</button></article>
           <article><span>03 · PRIVACY</span><h3>Secret-field redaction</h3><p>Password, card number, and access token must become [Redacted]; the safe note remains.</p><button disabled={Boolean(suiteRunning)} onClick={() => void runPrivacyTest()}>{suiteRunning === "privacy" ? "Running…" : "Run privacy test"}</button></article>
-          <article className="manual-test"><span>04 · REGRESSION</span><h3>Resolved error returns</h3><p>Run one checkout failure, resolve it in the dashboard, then run the same failure again. It should become regressed.</p><a href="http://localhost:3000" target="_blank" rel="noreferrer">Open dashboard ↗</a></article>
+          <article className="manual-test"><span>04 · REGRESSION</span><h3>Resolved error returns</h3><p>Run one checkout failure, resolve it in the dashboard, then run the same failure again. It should become regressed.</p><a href={dashboardUrl} target="_blank" rel="noreferrer">Open dashboard ↗</a></article>
           <article className="manual-test"><span>05 · BROWSERS</span><h3>Real Chrome + Brave</h3><p>Open this shop separately in each browser and run the same scenario. Recent event browsers should list both.</p><a href="#demo">See detected browser ↑</a></article>
           <article className="manual-test"><span>06 · SUCCESS PATH</span><h3>No false alarm</h3><p>Choose Successful payment. An order should be created and CrashLens should receive no error.</p><a href="#demo">Run successful checkout ↑</a></article>
         </div>

@@ -97,6 +97,7 @@ Add:
 ```text
 VITE_CRASHLENS_API_URL=https://your-api.vercel.app
 VITE_CRASHLENS_API_KEY=<same value as CRASHLENS_DEMO_API_KEY>
+VITE_CRASHLENS_DASHBOARD_URL=https://your-dashboard.vercel.app
 VITE_RELEASE=3.2.0
 ```
 
