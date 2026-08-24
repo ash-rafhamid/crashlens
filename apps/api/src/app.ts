@@ -1,7 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
-import rateLimit from "express-rate-limit";
+import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import { deliverAlert } from "./alert-service.js";
 import { createFingerprint, findCulprit } from "./fingerprint.js";
@@ -14,6 +14,9 @@ import {
   statusUpdateSchema
 } from "./validation.js";
 import type { CapturedEvent, Project } from "./domain.js";
+
+type HelmetMiddlewareFactory = (options: Record<string, unknown>) => ReturnType<typeof express.json>;
+const createHelmetMiddleware = helmet as unknown as HelmetMiddlewareFactory;
 
 interface BuildAppOptions {
   adminApiKey?: string;
@@ -58,7 +61,7 @@ export function buildApp(repository: IssueRepository, options: BuildAppOptions =
     .map((origin) => origin.trim());
 
   app.disable("x-powered-by");
-  app.use(helmet({ crossOriginResourcePolicy: false }));
+  app.use(createHelmetMiddleware({ crossOriginResourcePolicy: false }));
   app.use(
     cors({
       origin(origin, callback) {

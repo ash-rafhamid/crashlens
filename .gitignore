@@ -11,3 +11,8 @@ coverage/
 .data/
 .docker-config/
 *.tsbuildinfo
+
+.vercel
+.env*
+apps/dashboard/AGENTS.md
+apps/dashboard/CLAUDE.md
