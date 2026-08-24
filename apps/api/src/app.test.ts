@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { buildApp } from "./app.js";
+import { buildApp } from "./build-app.js";
 import { MemoryIssueRepository } from "./memory-repository.js";
 
 const apiKey = "test_project_key";
