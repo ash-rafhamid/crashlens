@@ -1,55 +1,62 @@
 import "server-only";
-import { timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import { createSessionToken, verifySessionToken } from "./session-token";
 
 const COOKIE_NAME = "crashlens_session";
-const SESSION_LIFETIME_SECONDS = 8 * 60 * 60;
+const apiUrl = process.env.CRASHLENS_API_URL ?? "http://localhost:4000";
 
-function sessionSecret(): string {
-  return process.env.SESSION_SECRET ?? "local-only-crashlens-session-secret-change-me";
+export interface DashboardUser {
+  id: string;
+  name: string;
+  email: string;
+  emailVerified: boolean;
+  createdAt: string;
 }
 
-export function dashboardIdentity() {
-  return {
-    userId: "admin",
-    email: process.env.DASHBOARD_ADMIN_EMAIL ?? "admin@crashlens.local",
-    password: process.env.DASHBOARD_ADMIN_PASSWORD ?? "crashlens-demo-admin"
-  };
+export interface DashboardWorkspace {
+  id: string;
+  name: string;
+  slug: string;
+  role: "owner" | "developer" | "viewer";
+  createdAt: string;
 }
 
-function sameValue(left: string, right: string): boolean {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-export function verifyCredentials(email: string, password: string): boolean {
-  const expected = dashboardIdentity();
-  return sameValue(email.trim().toLowerCase(), expected.email.toLowerCase()) &&
-    sameValue(password, expected.password);
-}
-
-export async function createDashboardSession(): Promise<void> {
-  const identity = dashboardIdentity();
-  const token = createSessionToken(sessionSecret(), identity.userId);
+export async function setDashboardSession(token: string, expiresAt: string): Promise<void> {
+  const seconds = Math.max(60, Math.floor((Date.parse(expiresAt) - Date.now()) / 1_000));
   (await cookies()).set(COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: SESSION_LIFETIME_SECONDS,
+    maxAge: seconds,
     path: "/",
     priority: "high"
   });
+}
+
+export async function getDashboardSessionToken(): Promise<string | null> {
+  return (await cookies()).get(COOKIE_NAME)?.value ?? null;
 }
 
 export async function deleteDashboardSession(): Promise<void> {
   (await cookies()).delete(COOKIE_NAME);
 }
 
-export async function readDashboardSession() {
-  const token = (await cookies()).get(COOKIE_NAME)?.value;
-  const payload = verifySessionToken(token, sessionSecret());
-  if (!payload) return null;
-  return { userId: payload.userId, email: dashboardIdentity().email };
+export async function readDashboardSession(): Promise<{
+  user: DashboardUser;
+  workspaces: DashboardWorkspace[];
+} | null> {
+  const token = await getDashboardSessionToken();
+  if (!token) return null;
+  try {
+    const response = await fetch(apiUrl + "/api/v1/auth/me", {
+      cache: "no-store",
+      headers: { authorization: "Bearer " + token }
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as {
+      user: DashboardUser;
+      workspaces: DashboardWorkspace[];
+    };
+  } catch {
+    return null;
+  }
 }

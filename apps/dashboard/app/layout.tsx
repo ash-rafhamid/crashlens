@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 import "./globals.css";
+import "./auth.css";
 
 export const metadata: Metadata = {
   title: "CrashLens — Error monitoring",

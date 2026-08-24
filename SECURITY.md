@@ -8,8 +8,9 @@ Do not open a public issue containing exploit details or captured user data. Con
 
 ## Deployment requirements
 
-- Replace every example database password, admin key, SDK key, dashboard password, and session secret.
-- Keep `CRASHLENS_ADMIN_KEY` only on the API and dashboard servers. Never place it in browser code.
+- Replace every example database password, operations key, SDK key, bootstrap password, and SMTP app password.
+- Keep `CRASHLENS_ADMIN_KEY` only on the API server. The dashboard uses per-user sessions instead.
+- Store Gmail app passwords only in the hosting provider's encrypted environment settings.
 - Restrict `CORS_ORIGINS` to the monitored applications.
 - Use HTTPS so the dashboard session cookie is transmitted securely.
 - Protect and back up PostgreSQL, and define an event-retention policy before collecting real user traffic.

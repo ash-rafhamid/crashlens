@@ -3,10 +3,24 @@
 ## Authentication
 
 - Event ingestion uses `x-crashlens-key: <project-sdk-key>`.
-- Management endpoints use `x-crashlens-admin-key: <private-admin-key>`.
-- Dashboard clients do not call the API directly; Next.js verifies their login cookie and adds the private admin key server-side.
+- Account login returns an opaque session token. The dashboard stores it in an HttpOnly cookie.
+- User management endpoints use `Authorization: Bearer <session-token>` and authorize every project through workspace membership.
+- `x-crashlens-admin-key` is reserved for maintenance endpoints and is not used by the dashboard.
 
 ## Public ingestion
+## Accounts
+
+```text
+POST /api/v1/auth/signup
+POST /api/v1/auth/resend-verification
+POST /api/v1/auth/verify-email
+POST /api/v1/auth/login
+POST /api/v1/auth/logout
+GET  /api/v1/auth/me
+POST /api/v1/auth/forgot-password
+POST /api/v1/auth/reset-password
+```
+
 
 ### `POST /api/v1/events`
 
@@ -25,17 +39,17 @@ Minimal body:
 
 Returns HTTP `202` with the grouped issue. Invalid payloads return `400`; missing or rotated keys return `401`.
 
-## Admin management
+## User project management
 
 ```text
-GET   /api/v1/admin/projects
-POST  /api/v1/admin/projects
-POST  /api/v1/admin/projects/:projectId/rotate-key
-GET   /api/v1/admin/projects/:projectId/issues
-GET   /api/v1/admin/projects/:projectId/issues/:issueId
-PATCH /api/v1/admin/projects/:projectId/issues/:issueId/status
-GET   /api/v1/admin/projects/:projectId/stats
-GET   /api/v1/admin/projects/:projectId/alerts
+GET   /api/v1/projects
+POST  /api/v1/projects
+POST  /api/v1/projects/:projectId/rotate-key
+GET   /api/v1/projects/:projectId/issues
+GET   /api/v1/projects/:projectId/issues/:issueId
+PATCH /api/v1/projects/:projectId/issues/:issueId/status
+GET   /api/v1/projects/:projectId/stats
+GET   /api/v1/projects/:projectId/alerts
 ```
 
 Create project body:
@@ -54,4 +68,4 @@ Status update body:
 
 Allowed manual values are `unresolved`, `resolved`, and `ignored`. `regressed` is assigned automatically when a resolved issue returns.
 
-SDK keys intentionally cannot read issues or change status. All investigation and management endpoints require the private admin key.
+SDK keys intentionally cannot read issues or change status. Investigation and management endpoints require a verified user session and return only projects in that user's workspaces.

@@ -24,9 +24,9 @@ Express API
              │
              ▼
 Next.js dashboard
-  ├─ verifies a signed HttpOnly login session
-  ├─ calls the API with a private admin key on the server
-  ├─ switches between isolated projects
+  ├─ stores an opaque API session in an HttpOnly cookie
+  ├─ proxies requests with that user's bearer session
+  ├─ switches only between projects in the user's workspace
   └─ displays issues, stats, alerts, and event evidence
 ```
 
@@ -35,11 +35,11 @@ Next.js dashboard
 | Credential | Location | Permission |
 | --- | --- | --- |
 | Project SDK key | Monitored browser application | Send events to one project |
-| Dashboard session cookie | Developer browser, HttpOnly | Use the dashboard until expiry |
-| Admin key | API and Next.js server only | Manage every project |
+| Account session | Developer browser, HttpOnly | Manage projects in joined workspaces |
+| Operations admin key | API operators only | Maintenance and emergency administration |
 | Database credentials | API server only | Read and write PostgreSQL |
 
-A browser SDK key is not treated as a secret: anything shipped to a browser can be inspected. It cannot list issues, create projects, or rotate keys. The admin key must never be placed in frontend code.
+A browser SDK key is not treated as a secret: anything shipped to a browser can be inspected. It cannot list issues, create projects, or rotate keys. Account tokens and the operations key must never be placed in frontend JavaScript.
 
 ## Main components
 
@@ -63,9 +63,9 @@ A browser SDK key is not treated as a secret: anything shipped to a browser can 
 ### Dashboard (`apps/dashboard`)
 
 - Next.js App Router application.
-- Signed eight-hour session in an HttpOnly, SameSite cookie.
-- Every data route verifies the session; hiding UI is not the security boundary.
-- Server-side proxy keeps the private admin key out of client JavaScript.
+- Signup, email verification, login, logout, and password recovery pages.
+- Opaque seven-day API session in an HttpOnly, Secure, SameSite cookie.
+- Every API query joins project ownership through workspace membership.
 - Project selector, create-project flow, one-time key display, and key rotation.
 
 ### Demo shop (`apps/demo-shop`)
@@ -76,7 +76,10 @@ A browser SDK key is not treated as a secret: anything shipped to a browser can 
 
 ## Data model
 
-- `projects`: project identity and hashed SDK key.
+- `users`: account profile, verification state, and scrypt password hash.
+- `workspaces` and `workspace_members`: ownership boundary and member role.
+- `auth_sessions` and `auth_tokens`: hashed sessions, verification, and reset tokens.
+- `projects`: project identity, workspace ownership, and hashed SDK key.
 - `issues`: grouped error identity, status, counts, first/last seen, and release.
 - `error_events`: individual occurrences with stack, browser, user, context, and breadcrumbs.
 - `alerts`: new-issue and regression notifications plus webhook delivery status.
@@ -91,4 +94,4 @@ When a developer resolves an issue and the same fingerprint arrives later, the s
 
 ## Honest MVP boundary
 
-This is a complete, deployable portfolio MVP—not a replacement for Sentry at global scale. A larger SaaS version would add organizations and RBAC, durable job queues, source-map processing, retention jobs, billing, SSO, audit logs, and horizontally coordinated caching.
+This is a complete, deployable multi-user portfolio product, not a replacement for Sentry at global scale. A larger SaaS version would add workspace invitations in the UI, richer RBAC, durable job queues, source-map processing, retention jobs, billing, SSO, audit logs, and horizontally coordinated caching.

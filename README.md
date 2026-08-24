@@ -35,7 +35,8 @@ PostgreSQL
 Next.js dashboard ─── issue list, stack trace, context and breadcrumbs
 ```
 
-The project SDK key may be included in browser code because it can only submit events to one project. Dashboard management uses a separate private admin key that remains on the API and Next.js servers.
+The project SDK key may be included in browser code because it can only submit events to one project. Dashboard users authenticate with an opaque server-side session; every read and management request is limited to projects in that user's workspace.
+The operations admin key is retained only for maintenance endpoints and is never used by browser clients.
 
 ## Repository layout
 
@@ -62,12 +63,14 @@ The development services start at:
 - Demo shop: <http://localhost:3001>
 - API health check: <http://localhost:4000/health>
 
-Local dashboard credentials:
+For the built-in local workspace, use:
 
 ```text
 Email:    admin@crashlens.local
 Password: crashlens-demo-admin
 ```
+
+You can also create a separate account from `/signup`. In development, CrashLens shows a local verification link when SMTP is not configured.
 
 Without `DATABASE_URL`, the API uses in-memory storage. This is convenient for development, but the data is cleared whenever the API restarts.
 
@@ -140,7 +143,7 @@ Run the complete verification used by CI with:
 npm run check
 ```
 
-The test suite covers event ingestion, grouping, project isolation, SDK-key rotation, status changes, alert delivery, browser detection, session signing, and SDK reporting.
+The test suite covers signup, verification, login, password reset, cross-account project isolation, event ingestion, grouping, SDK-key rotation, status changes, alert delivery, browser detection, and SDK reporting.
 
 ## Deployment
 
@@ -148,21 +151,21 @@ The simplest hosted arrangement for this repository is:
 
 ```text
 Dashboard       Vercel
-API             Render
+API             Vercel
 Database        Neon PostgreSQL
 Demo shop       Vercel (optional)
 Browser SDK     npm (optional until public use)
 ```
 
-All applications can be built from the same GitHub repository. Vercel treats the dashboard and demo shop as separate projects, while the root `render.yaml` configures the API service.
+All applications can be built from the same GitHub repository. Vercel treats the dashboard, API, and demo shop as separate projects with different root directories.
 
 Follow [the cloud deployment guide](docs/CLOUD_DEPLOYMENT.md) for the required root directories and environment variables.
 
 ## Current scope
 
-CrashLens is a working single-administrator MVP. It supports multiple monitored projects, but it does not yet offer public registration, organization accounts, team roles, billing, source-map processing, or data-retention controls. Those features are required before operating it as a public multi-customer service.
+CrashLens is a working multi-user portfolio product. It provides public registration, email verification, password recovery, private workspaces, per-user project isolation, and multiple monitored projects.
 
-For a portfolio deployment, give dashboard credentials only to the people who should review the project.
+The next SaaS-level features would be workspace invitations and role management in the UI, billing, source-map processing, audit logs, SSO, and configurable data retention.
 
 ## Documentation
 

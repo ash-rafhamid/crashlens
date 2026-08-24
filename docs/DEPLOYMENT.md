@@ -21,7 +21,7 @@ The API uses memory when `DATABASE_URL` is absent. Restarting it clears the data
    Copy-Item .env.example .env
    ```
 
-2. Replace every `replace-with-...` value in `.env`. Generate long random values for the session secret, admin key, SDK key, and passwords. Compose intentionally refuses to start when a required value is missing.
+2. Replace every `replace-with-...` value in `.env`. Generate distinct long random values for the operations key, SDK key, database password, and bootstrap account password. Compose intentionally refuses to start when a required value is missing.
 
 3. Build and start the four services.
 
@@ -66,7 +66,7 @@ Webhook failure never prevents event ingestion. The alert stays in PostgreSQL wi
 - Do not expose port 5432 publicly.
 - Store secrets in the hosting platform's secret manager, not in the repository.
 - Define retention/deletion rules before accepting real personal data.
-- Use at least two distinct credentials: one public project SDK key and one private admin key.
+- Use distinct project SDK keys, account passwords, the operations admin key, and database credentials.
 
 The Next.js service uses standalone output so its production image contains traced runtime files instead of the full development workspace.
 

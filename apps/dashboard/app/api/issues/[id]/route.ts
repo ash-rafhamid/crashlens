@@ -16,7 +16,7 @@ export async function GET(request: Request, context: RouteContext) {
   const projectId = projectIdFrom(request);
   if (!projectId) return Response.json({ error: "Choose a project" }, { status: 400 });
   return proxyBackend(
-    `/api/v1/admin/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(id)}`
+    `/api/v1/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(id)}`
   );
 }
 
@@ -28,7 +28,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!projectId) return Response.json({ error: "Choose a project" }, { status: 400 });
   const body = await request.text();
   return proxyBackend(
-    `/api/v1/admin/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(id)}/status`,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(id)}/status`,
     { method: "PATCH", body }
   );
 }

@@ -1,19 +1,35 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  createOpaqueToken,
+  hashOpaqueToken,
+  hashPassword,
+  normalizeEmail,
+  verifyPassword
+} from "./auth.js";
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import { deliverAlert } from "./alert-service.js";
+import {
+  createAccountEmailSenderFromEnv,
+  type AccountEmailSender
+} from "./email-service.js";
 import { createFingerprint, findCulprit } from "./fingerprint.js";
 import { redactSensitiveData, removeQueryString } from "./redact.js";
 import type { IssueRepository } from "./repository.js";
 import {
   capturedEventSchema,
   demoCheckoutSchema,
+  emailSchema,
+  loginSchema,
+  passwordResetSchema,
   projectCreateSchema,
-  statusUpdateSchema
+  signupSchema,
+  statusUpdateSchema,
+  tokenSchema
 } from "./validation.js";
-import type { CapturedEvent, Project } from "./domain.js";
+import type { CapturedEvent, Project, User } from "./domain.js";
 
 type HelmetMiddlewareFactory = (options: Record<string, unknown>) => ReturnType<typeof express.json>;
 const createHelmetMiddleware = helmet as unknown as HelmetMiddlewareFactory;
@@ -22,6 +38,9 @@ interface BuildAppOptions {
   adminApiKey?: string;
   alertWebhookUrl?: string;
   alertWebhookSecret?: string;
+  emailSender?: AccountEmailSender | null;
+  dashboardUrl?: string;
+  exposeAuthTokens?: boolean;
 }
 
 function getApiKey(request: Request): string | null {
@@ -56,6 +75,14 @@ export function buildApp(repository: IssueRepository, options: BuildAppOptions =
     webhookUrl: options.alertWebhookUrl ?? process.env.CRASHLENS_ALERT_WEBHOOK_URL,
     webhookSecret: options.alertWebhookSecret ?? process.env.CRASHLENS_ALERT_WEBHOOK_SECRET
   };
+  const emailSender =
+    options.emailSender === undefined ? createAccountEmailSenderFromEnv() : options.emailSender;
+  const dashboardUrl = (
+    options.dashboardUrl ??
+    process.env.DASHBOARD_URL ??
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
+  const exposeAuthTokens = options.exposeAuthTokens ?? process.env.NODE_ENV !== "production";
   const allowedOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:3000,http://localhost:3001")
     .split(",")
     .map((origin) => origin.trim());
@@ -123,10 +150,249 @@ export function buildApp(repository: IssueRepository, options: BuildAppOptions =
     return project;
   }
 
+
+  const authRateLimit = rateLimit({
+    windowMs: 15 * 60_000,
+    limit: 30,
+    standardHeaders: "draft-8",
+    legacyHeaders: false
+  });
+
+  function getBearerToken(request: Request): string | null {
+    const authorization = request.header("authorization")?.trim();
+    if (!authorization?.startsWith("Bearer ")) return null;
+    return authorization.slice(7).trim() || null;
+  }
+
+  async function requireUser(
+    request: Request,
+    response: Response
+  ): Promise<{ user: User; token: string; tokenHash: string } | null> {
+    const token = getBearerToken(request);
+    if (!token) {
+      response.status(401).json({ error: "Sign in is required" });
+      return null;
+    }
+    const tokenHash = hashOpaqueToken(token);
+    const user = await repository.getSessionUser(tokenHash, new Date().toISOString());
+    if (!user) {
+      response.status(401).json({ error: "Session is invalid or expired" });
+      return null;
+    }
+    return { user, token, tokenHash };
+  }
+
+  async function requireUserProject(
+    request: Request,
+    response: Response
+  ): Promise<{ user: User; project: Project } | null> {
+    const identity = await requireUser(request, response);
+    if (!identity) return null;
+    const project = await repository.getProjectForUser(
+      identity.user.id,
+      String(request.params.projectId ?? "")
+    );
+    if (!project) {
+      response.status(404).json({ error: "Project not found" });
+      return null;
+    }
+    return { user: identity.user, project };
+  }
+
+  async function issueVerification(user: User): Promise<{ emailSent: boolean; token: string }> {
+    const token = createOpaqueToken();
+    await repository.storeAuthToken({
+      userId: user.id,
+      kind: "verify_email",
+      tokenHash: hashOpaqueToken(token),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString()
+    });
+    if (!emailSender) return { emailSent: false, token };
+    const verificationUrl =
+      dashboardUrl + "/verify-email?token=" + encodeURIComponent(token);
+    try {
+      await emailSender.sendEmailVerification({
+        name: user.name,
+        email: user.email,
+        verificationUrl
+      });
+      return { emailSent: true, token };
+    } catch (error) {
+      console.error("Unable to send verification email", error);
+      return { emailSent: false, token };
+    }
+  }
+
+  async function issuePasswordReset(user: User): Promise<{ emailSent: boolean; token: string }> {
+    const token = createOpaqueToken();
+    await repository.storeAuthToken({
+      userId: user.id,
+      kind: "reset_password",
+      tokenHash: hashOpaqueToken(token),
+      expiresAt: new Date(Date.now() + 60 * 60_000).toISOString()
+    });
+    if (!emailSender) return { emailSent: false, token };
+    const resetUrl = dashboardUrl + "/reset-password?token=" + encodeURIComponent(token);
+    try {
+      await emailSender.sendPasswordReset({
+        name: user.name,
+        email: user.email,
+        resetUrl
+      });
+      return { emailSent: true, token };
+    } catch (error) {
+      console.error("Unable to send password reset email", error);
+      return { emailSent: false, token };
+    }
+  }
   app.get("/health", (_request, response) => {
     response.json({ status: "ok", storage: repository.storageName });
   });
 
+
+  app.post("/api/v1/auth/signup", authRateLimit, async (request, response) => {
+    const result = signupSchema.safeParse(request.body);
+    if (!result.success) {
+      response.status(400).json({
+        error: result.error.issues[0]?.message ?? "Invalid account details"
+      });
+      return;
+    }
+
+    const email = normalizeEmail(result.data.email);
+    const workspaceName =
+      result.data.workspaceName?.trim() || result.data.name.trim() + "'s workspace";
+    const created = await repository.createUserWithWorkspace({
+      name: result.data.name.trim(),
+      email,
+      passwordHash: await hashPassword(result.data.password),
+      workspaceName,
+      workspaceSlug: createSlug(workspaceName)
+    });
+    if (!created) {
+      response.status(409).json({ error: "An account already exists for this email" });
+      return;
+    }
+
+    const verification = await issueVerification(created.user);
+    response.status(201).json({
+      ok: true,
+      email: created.user.email,
+      emailSent: verification.emailSent,
+      ...(exposeAuthTokens ? { verificationToken: verification.token } : {})
+    });
+  });
+
+  app.post("/api/v1/auth/resend-verification", authRateLimit, async (request, response) => {
+    const result = emailSchema.safeParse(request.body);
+    if (!result.success) {
+      response.status(400).json({ error: "Enter a valid email address" });
+      return;
+    }
+    const user = await repository.findUserByEmail(normalizeEmail(result.data.email));
+    let verification: { emailSent: boolean; token: string } | null = null;
+    if (user && !user.emailVerified) verification = await issueVerification(user);
+    response.json({
+      ok: true,
+      message: "If this unverified account exists, a new email has been sent.",
+      ...(exposeAuthTokens && verification ? { verificationToken: verification.token } : {})
+    });
+  });
+
+  app.post("/api/v1/auth/verify-email", authRateLimit, async (request, response) => {
+    const result = tokenSchema.safeParse(request.body);
+    if (!result.success) {
+      response.status(400).json({ error: "Verification link is invalid" });
+      return;
+    }
+    const user = await repository.verifyEmailWithToken(
+      hashOpaqueToken(result.data.token),
+      new Date().toISOString()
+    );
+    if (!user) {
+      response.status(400).json({ error: "Verification link is invalid or expired" });
+      return;
+    }
+    response.json({ ok: true, user });
+  });
+
+  app.post("/api/v1/auth/login", authRateLimit, async (request, response) => {
+    const result = loginSchema.safeParse(request.body);
+    if (!result.success) {
+      response.status(400).json({ error: "Enter a valid email and password" });
+      return;
+    }
+    const user = await repository.findUserByEmail(normalizeEmail(result.data.email));
+    if (!user || !(await verifyPassword(result.data.password, user.passwordHash))) {
+      response.status(401).json({ error: "Email or password is incorrect" });
+      return;
+    }
+    if (!user.emailVerified) {
+      response.status(403).json({
+        error: "Verify your email before signing in",
+        code: "EMAIL_NOT_VERIFIED"
+      });
+      return;
+    }
+
+    const token = createOpaqueToken();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60_000).toISOString();
+    await repository.createSession(user.id, hashOpaqueToken(token), expiresAt);
+    const workspaces = await repository.listWorkspacesForUser(user.id);
+    const { passwordHash: _passwordHash, ...publicUser } = user;
+    response.json({ token, expiresAt, user: publicUser, workspaces });
+  });
+
+  app.post("/api/v1/auth/logout", async (request, response) => {
+    const identity = await requireUser(request, response);
+    if (!identity) return;
+    await repository.deleteSession(identity.tokenHash);
+    response.json({ ok: true });
+  });
+
+  app.get("/api/v1/auth/me", async (request, response) => {
+    const identity = await requireUser(request, response);
+    if (!identity) return;
+    response.json({
+      user: identity.user,
+      workspaces: await repository.listWorkspacesForUser(identity.user.id)
+    });
+  });
+
+  app.post("/api/v1/auth/forgot-password", authRateLimit, async (request, response) => {
+    const result = emailSchema.safeParse(request.body);
+    if (!result.success) {
+      response.status(400).json({ error: "Enter a valid email address" });
+      return;
+    }
+    const user = await repository.findUserByEmail(normalizeEmail(result.data.email));
+    const reset = user?.emailVerified ? await issuePasswordReset(user) : null;
+    response.json({
+      ok: true,
+      message: "If this account exists, a password reset email has been sent.",
+      ...(exposeAuthTokens && reset ? { resetToken: reset.token } : {})
+    });
+  });
+
+  app.post("/api/v1/auth/reset-password", authRateLimit, async (request, response) => {
+    const result = passwordResetSchema.safeParse(request.body);
+    if (!result.success) {
+      response.status(400).json({
+        error: result.error.issues[0]?.message ?? "Invalid password reset"
+      });
+      return;
+    }
+    const user = await repository.resetPasswordWithToken(
+      hashOpaqueToken(result.data.token),
+      await hashPassword(result.data.password),
+      new Date().toISOString()
+    );
+    if (!user) {
+      response.status(400).json({ error: "Password reset link is invalid or expired" });
+      return;
+    }
+    response.json({ ok: true });
+  });
   app.post("/demo/checkout", async (request, response) => {
     const result = demoCheckoutSchema.safeParse(request.body);
     if (!result.success) {
@@ -209,6 +475,118 @@ export function buildApp(repository: IssueRepository, options: BuildAppOptions =
     response.status(202).json({ accepted: true, issue });
   });
 
+
+  app.get("/api/v1/projects", async (request, response) => {
+    const identity = await requireUser(request, response);
+    if (!identity) return;
+    response.json({ projects: await repository.listProjectsForUser(identity.user.id) });
+  });
+
+  app.post("/api/v1/projects", async (request, response) => {
+    const identity = await requireUser(request, response);
+    if (!identity) return;
+    const result = projectCreateSchema.safeParse(request.body);
+    if (!result.success) {
+      response.status(400).json({ error: "Project name must contain 2 to 100 characters" });
+      return;
+    }
+    const apiKey = createProjectApiKey();
+    const project = await repository.createProjectForUser(
+      identity.user.id,
+      result.data.name,
+      createSlug(result.data.name),
+      apiKey
+    );
+    if (!project) {
+      response.status(409).json({ error: "Unable to create this project" });
+      return;
+    }
+    response.status(201).json({ project, apiKey });
+  });
+
+  app.post("/api/v1/projects/:projectId/rotate-key", async (request, response) => {
+    const identity = await requireUser(request, response);
+    if (!identity) return;
+    const apiKey = createProjectApiKey();
+    const rotated = await repository.rotateProjectApiKeyForUser(
+      identity.user.id,
+      String(request.params.projectId),
+      apiKey
+    );
+    if (!rotated) {
+      response.status(404).json({ error: "Project not found or access denied" });
+      return;
+    }
+    response.json({ apiKey });
+  });
+
+  app.get("/api/v1/projects/:projectId/issues", async (request, response) => {
+    const managed = await requireUserProject(request, response);
+    if (!managed) return;
+    const status = typeof request.query.status === "string" ? request.query.status : undefined;
+    const allowedStatus = ["unresolved", "resolved", "ignored", "regressed"].includes(status ?? "")
+      ? (status as "unresolved" | "resolved" | "ignored" | "regressed")
+      : undefined;
+    response.json({
+      project: managed.project,
+      issues: await repository.listIssues(managed.project.id, allowedStatus)
+    });
+  });
+
+  app.get("/api/v1/projects/:projectId/issues/:issueId", async (request, response) => {
+    const managed = await requireUserProject(request, response);
+    if (!managed) return;
+    const issue = await repository.getIssue(
+      managed.project.id,
+      String(request.params.issueId)
+    );
+    if (!issue) {
+      response.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    response.json({ project: managed.project, issue });
+  });
+
+  app.patch(
+    "/api/v1/projects/:projectId/issues/:issueId/status",
+    async (request, response) => {
+      const managed = await requireUserProject(request, response);
+      if (!managed) return;
+      const result = statusUpdateSchema.safeParse(request.body);
+      if (!result.success) {
+        response.status(400).json({ error: "Invalid issue status" });
+        return;
+      }
+      const issue = await repository.updateIssueStatus(
+        managed.project.id,
+        String(request.params.issueId),
+        result.data.status
+      );
+      if (!issue) {
+        response.status(404).json({ error: "Issue not found" });
+        return;
+      }
+      response.json({ issue });
+    }
+  );
+
+  app.get("/api/v1/projects/:projectId/stats", async (request, response) => {
+    const managed = await requireUserProject(request, response);
+    if (!managed) return;
+    response.json({
+      project: managed.project,
+      stats: await repository.getStats(managed.project.id)
+    });
+  });
+
+  app.get("/api/v1/projects/:projectId/alerts", async (request, response) => {
+    const managed = await requireUserProject(request, response);
+    if (!managed) return;
+    response.json({
+      project: managed.project,
+      alerts: await repository.listAlerts(managed.project.id)
+    });
+  });
   app.get("/api/v1/admin/projects", async (request, response) => {
     if (!requireAdmin(request, response)) return;
     response.json({ projects: await repository.listProjects() });

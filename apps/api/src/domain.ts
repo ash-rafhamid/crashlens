@@ -6,6 +6,30 @@ export interface Project {
   id: string;
   name: string;
   slug: string;
+  workspaceId: string | null;
+  createdAt: string;
+}
+
+export type WorkspaceRole = "owner" | "developer" | "viewer";
+export type AuthTokenKind = "verify_email" | "reset_password";
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  emailVerified: boolean;
+  createdAt: string;
+}
+
+export interface UserWithPassword extends User {
+  passwordHash: string;
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  slug: string;
+  role: WorkspaceRole;
   createdAt: string;
 }
 

@@ -9,7 +9,7 @@ export async function POST(request: Request, context: RouteContext) {
   const blocked = await guardApiRequest(request);
   if (blocked) return blocked;
   const { id } = await context.params;
-  return proxyBackend(`/api/v1/admin/projects/${encodeURIComponent(id)}/rotate-key`, {
+  return proxyBackend(`/api/v1/projects/${encodeURIComponent(id)}/rotate-key`, {
     method: "POST"
   });
 }

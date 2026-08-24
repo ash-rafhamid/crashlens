@@ -1,8 +1,8 @@
 import "server-only";
-import { readDashboardSession } from "./session";
+import { getDashboardSessionToken } from "./session";
 
 export async function guardApiRequest(request: Request): Promise<Response | null> {
-  if (!(await readDashboardSession())) {
+  if (!(await getDashboardSessionToken())) {
     return Response.json({ error: "Please sign in to CrashLens" }, { status: 401 });
   }
 

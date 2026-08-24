@@ -86,7 +86,7 @@ function displayValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export function IssueDashboard({ adminEmail }: { adminEmail: string }) {
+export function IssueDashboard({ userEmail }: { userEmail: string }) {
   const testShopUrl = process.env.NEXT_PUBLIC_DEMO_SHOP_URL ?? "http://localhost:3001/";
   const [issues, setIssues] = useState<Issue[]>([]);
   const [stats, setStats] = useState<Stats>(emptyStats);
@@ -310,7 +310,7 @@ export function IssueDashboard({ adminEmail }: { adminEmail: string }) {
       <main className="main-content">
         <header>
           <div className="page-heading"><p className="breadcrumb">{selectedProject?.name ?? "Loading projects…"}</p><h1>Issues</h1></div>
-          <div className="header-actions"><span className="live"><i /> Live</span><a href={testShopUrl} target="_blank" rel="noreferrer">Open test app</a><button className="avatar" title={`Sign out ${adminEmail}`} aria-label="Sign out" onClick={() => void logout()}>{adminEmail.slice(0, 2).toUpperCase()}</button></div>
+          <div className="header-actions"><span className="live"><i /> Live</span><a href={testShopUrl} target="_blank" rel="noreferrer">Open test app</a><button className="avatar" title={`Sign out ${userEmail}`} aria-label="Sign out" onClick={() => void logout()}>{userEmail.slice(0, 2).toUpperCase()}</button></div>
         </header>
 
         {error && <div className="connection-error"><strong>API unavailable</strong><span>{error}</span><code>npm run dev</code></div>}

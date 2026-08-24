@@ -11,7 +11,11 @@ import type {
   Project,
   ProjectStats,
   RecordEventResult,
-  StoredEvent
+  StoredEvent,
+  User,
+  UserWithPassword,
+  Workspace,
+  WorkspaceRole
 } from "./domain.js";
 import type { IssueRepository } from "./repository.js";
 
@@ -89,7 +93,52 @@ export class PostgresIssueRepository implements IssueRepository {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS users (
+        id UUID PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email));
+
+      CREATE TABLE IF NOT EXISTS workspaces (
+        id UUID PRIMARY KEY,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS workspace_members (
+        workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK (role IN ('owner', 'developer', 'viewer')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (workspace_id, user_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS auth_sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS auth_tokens (
+        token_hash TEXT PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('verify_email', 'reset_password')),
+        expires_at TIMESTAMPTZ NOT NULL,
+        used_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS slug TEXT;
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS workspace_id UUID
+        REFERENCES workspaces(id) ON DELETE CASCADE;
       UPDATE projects SET slug = 'project-' || LEFT(id::text, 8) WHERE slug IS NULL;
       ALTER TABLE projects ALTER COLUMN slug SET NOT NULL;
 
@@ -108,6 +157,11 @@ export class PostgresIssueRepository implements IssueRepository {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
       CREATE INDEX IF NOT EXISTS idx_alerts_project_created
         ON alerts(project_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id);
+      CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON auth_sessions(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_kind ON auth_tokens(user_id, kind);
     `);
 
     await this.pool.query(
@@ -118,9 +172,301 @@ export class PostgresIssueRepository implements IssueRepository {
     );
   }
 
+  async ensureBootstrapIdentity(input: {
+    name: string;
+    email: string;
+    passwordHash: string;
+    workspaceName: string;
+    workspaceSlug: string;
+  }): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const existing = await client.query(
+        "SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1 FOR UPDATE",
+        [input.email]
+      );
+      let userId: string;
+      if (existing.rows[0]) {
+        userId = String(existing.rows[0].id);
+        await client.query(
+          `UPDATE users
+           SET name = $2, password_hash = $3, email_verified = TRUE
+           WHERE id = $1`,
+          [userId, input.name, input.passwordHash]
+        );
+      } else {
+        userId = randomUUID();
+        await client.query(
+          `INSERT INTO users (id, name, email, password_hash, email_verified)
+           VALUES ($1, $2, $3, $4, TRUE)`,
+          [userId, input.name, input.email, input.passwordHash]
+        );
+      }
+
+      const workspaceResult = await client.query(
+        "SELECT id FROM workspaces WHERE slug = $1 LIMIT 1",
+        [input.workspaceSlug]
+      );
+      let workspaceId: string;
+      if (workspaceResult.rows[0]) {
+        workspaceId = String(workspaceResult.rows[0].id);
+      } else {
+        workspaceId = randomUUID();
+        await client.query(
+          `INSERT INTO workspaces (id, name, slug, owner_user_id)
+           VALUES ($1, $2, $3, $4)`,
+          [workspaceId, input.workspaceName, input.workspaceSlug, userId]
+        );
+      }
+
+      await client.query(
+        `INSERT INTO workspace_members (workspace_id, user_id, role)
+         VALUES ($1, $2, 'owner')
+         ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = 'owner'`,
+        [workspaceId, userId]
+      );
+      await client.query("UPDATE projects SET workspace_id = $1 WHERE workspace_id IS NULL", [
+        workspaceId
+      ]);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async findUserByEmail(email: string): Promise<UserWithPassword | null> {
+    const result = await this.pool.query(
+      `SELECT id, name, email, password_hash, email_verified, created_at
+       FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+      [email]
+    );
+    const row = result.rows[0] as DatabaseRow | undefined;
+    return row ? this.rowToUserWithPassword(row) : null;
+  }
+
+  async createUserWithWorkspace(input: {
+    name: string;
+    email: string;
+    passwordHash: string;
+    workspaceName: string;
+    workspaceSlug: string;
+  }): Promise<{ user: User; workspace: Workspace } | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const userId = randomUUID();
+      const workspaceId = randomUUID();
+      const userResult = await client.query(
+        `INSERT INTO users (id, name, email, password_hash)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, name, email, email_verified, created_at`,
+        [userId, input.name, input.email, input.passwordHash]
+      );
+      const workspaceResult = await client.query(
+        `INSERT INTO workspaces (id, name, slug, owner_user_id)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, name, slug, workspace_id, created_at`,
+        [workspaceId, input.workspaceName, input.workspaceSlug, userId]
+      );
+      await client.query(
+        "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, 'owner')",
+        [workspaceId, userId]
+      );
+      await client.query("COMMIT");
+      return {
+        user: this.rowToUser(userResult.rows[0] as DatabaseRow),
+        workspace: this.rowToWorkspace(workspaceResult.rows[0] as DatabaseRow, "owner")
+      };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      if ((error as { code?: string }).code === "23505") return null;
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async storeAuthToken(input: {
+    userId: string;
+    kind: "verify_email" | "reset_password";
+    tokenHash: string;
+    expiresAt: string;
+  }): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        "DELETE FROM auth_tokens WHERE user_id = $1 AND kind = $2 AND used_at IS NULL",
+        [input.userId, input.kind]
+      );
+      await client.query(
+        "INSERT INTO auth_tokens (token_hash, user_id, kind, expires_at) VALUES ($1, $2, $3, $4)",
+        [input.tokenHash, input.userId, input.kind, input.expiresAt]
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async verifyEmailWithToken(tokenHash: string, now: string): Promise<User | null> {
+    const result = await this.pool.query(
+      `WITH consumed AS (
+         UPDATE auth_tokens SET used_at = $2
+         WHERE token_hash = $1 AND kind = 'verify_email'
+           AND used_at IS NULL AND expires_at > $2
+         RETURNING user_id
+       )
+       UPDATE users SET email_verified = TRUE
+       FROM consumed WHERE users.id = consumed.user_id
+       RETURNING users.id, users.name, users.email, users.email_verified, users.created_at`,
+      [tokenHash, now]
+    );
+    const row = result.rows[0] as DatabaseRow | undefined;
+    return row ? this.rowToUser(row) : null;
+  }
+
+  async resetPasswordWithToken(
+    tokenHash: string,
+    passwordHash: string,
+    now: string
+  ): Promise<User | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const tokenResult = await client.query(
+        `UPDATE auth_tokens SET used_at = $2
+         WHERE token_hash = $1 AND kind = 'reset_password'
+           AND used_at IS NULL AND expires_at > $2
+         RETURNING user_id`,
+        [tokenHash, now]
+      );
+      if (!tokenResult.rows[0]) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      const userId = String(tokenResult.rows[0].user_id);
+      const userResult = await client.query(
+        `UPDATE users SET password_hash = $2 WHERE id = $1
+         RETURNING id, name, email, email_verified, created_at`,
+        [userId, passwordHash]
+      );
+      await client.query("DELETE FROM auth_sessions WHERE user_id = $1", [userId]);
+      await client.query("COMMIT");
+      return this.rowToUser(userResult.rows[0] as DatabaseRow);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async createSession(userId: string, tokenHash: string, expiresAt: string): Promise<void> {
+    await this.pool.query(
+      "INSERT INTO auth_sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)",
+      [tokenHash, userId, expiresAt]
+    );
+  }
+
+  async getSessionUser(tokenHash: string, now: string): Promise<User | null> {
+    const result = await this.pool.query(
+      `SELECT u.id, u.name, u.email, u.email_verified, u.created_at
+       FROM auth_sessions s JOIN users u ON u.id = s.user_id
+       WHERE s.token_hash = $1 AND s.expires_at > $2 AND u.email_verified = TRUE`,
+      [tokenHash, now]
+    );
+    const row = result.rows[0] as DatabaseRow | undefined;
+    return row ? this.rowToUser(row) : null;
+  }
+
+  async deleteSession(tokenHash: string): Promise<void> {
+    await this.pool.query("DELETE FROM auth_sessions WHERE token_hash = $1", [tokenHash]);
+  }
+
+  async listWorkspacesForUser(userId: string): Promise<Workspace[]> {
+    const result = await this.pool.query(
+      `SELECT w.id, w.name, w.slug, w.created_at, m.role
+       FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+       WHERE m.user_id = $1 ORDER BY w.name ASC`,
+      [userId]
+    );
+    return result.rows.map((row) =>
+      this.rowToWorkspace(row as DatabaseRow, String(row.role) as WorkspaceRole)
+    );
+  }
+
+  async listProjectsForUser(userId: string): Promise<Project[]> {
+    const result = await this.pool.query(
+      `SELECT p.id, p.name, p.slug, p.workspace_id, p.created_at
+       FROM projects p JOIN workspace_members m ON m.workspace_id = p.workspace_id
+       WHERE m.user_id = $1 ORDER BY p.name ASC`,
+      [userId]
+    );
+    return result.rows.map((row) => this.rowToProject(row as DatabaseRow));
+  }
+
+  async getProjectForUser(userId: string, projectId: string): Promise<Project | null> {
+    const result = await this.pool.query(
+      `SELECT p.id, p.name, p.slug, p.workspace_id, p.created_at
+       FROM projects p JOIN workspace_members m ON m.workspace_id = p.workspace_id
+       WHERE m.user_id = $1 AND p.id = $2`,
+      [userId, projectId]
+    );
+    const row = result.rows[0] as DatabaseRow | undefined;
+    return row ? this.rowToProject(row) : null;
+  }
+
+  async createProjectForUser(
+    userId: string,
+    name: string,
+    slug: string,
+    apiKey: string
+  ): Promise<Project | null> {
+    try {
+      const result = await this.pool.query(
+        `INSERT INTO projects (id, name, slug, api_key_hash, workspace_id)
+         SELECT $2, $3, $4, $5, m.workspace_id
+         FROM workspace_members m
+         WHERE m.user_id = $1 AND m.role IN ('owner', 'developer')
+         ORDER BY m.created_at ASC LIMIT 1
+         RETURNING id, name, slug, workspace_id, created_at`,
+        [userId, randomUUID(), name, slug, this.hashKey(apiKey)]
+      );
+      const row = result.rows[0] as DatabaseRow | undefined;
+      return row ? this.rowToProject(row) : null;
+    } catch (error) {
+      if ((error as { code?: string }).code === "23505") return null;
+      throw error;
+    }
+  }
+
+  async rotateProjectApiKeyForUser(
+    userId: string,
+    projectId: string,
+    apiKey: string
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE projects p SET api_key_hash = $3
+       FROM workspace_members m
+       WHERE p.id = $2 AND m.user_id = $1
+         AND m.workspace_id = p.workspace_id
+         AND m.role IN ('owner', 'developer')
+       RETURNING p.id`,
+      [userId, projectId, this.hashKey(apiKey)]
+    );
+    return Boolean(result.rows[0]);
+  }
   async findProjectByApiKey(apiKey: string): Promise<Project | null> {
     const result = await this.pool.query(
-      "SELECT id, name, slug, created_at FROM projects WHERE api_key_hash = $1 LIMIT 1",
+      "SELECT id, name, slug, workspace_id, created_at FROM projects WHERE api_key_hash = $1 LIMIT 1",
       [this.hashKey(apiKey)]
     );
     const row = result.rows[0] as DatabaseRow | undefined;
@@ -129,7 +475,7 @@ export class PostgresIssueRepository implements IssueRepository {
 
   async getProject(projectId: string): Promise<Project | null> {
     const result = await this.pool.query(
-      "SELECT id, name, slug, created_at FROM projects WHERE id = $1",
+      "SELECT id, name, slug, workspace_id, created_at FROM projects WHERE id = $1",
       [projectId]
     );
     const row = result.rows[0] as DatabaseRow | undefined;
@@ -138,7 +484,7 @@ export class PostgresIssueRepository implements IssueRepository {
 
   async listProjects(): Promise<Project[]> {
     const result = await this.pool.query(
-      "SELECT id, name, slug, created_at FROM projects ORDER BY name ASC"
+      "SELECT id, name, slug, workspace_id, created_at FROM projects ORDER BY name ASC"
     );
     return result.rows.map((row) => this.rowToProject(row as DatabaseRow));
   }
@@ -147,7 +493,7 @@ export class PostgresIssueRepository implements IssueRepository {
     const result = await this.pool.query(
       `INSERT INTO projects (id, name, slug, api_key_hash)
        VALUES ($1, $2, $3, $4)
-       RETURNING id, name, slug, created_at`,
+       RETURNING id, name, slug, workspace_id, created_at`,
       [randomUUID(), name, slug, this.hashKey(apiKey)]
     );
     return this.rowToProject(result.rows[0] as DatabaseRow);
@@ -417,6 +763,34 @@ export class PostgresIssueRepository implements IssueRepository {
       id: String(row.id),
       name: String(row.name),
       slug: String(row.slug),
+      workspaceId: row.workspace_id ? String(row.workspace_id) : null,
+      createdAt: this.toIso(row.created_at)
+    };
+  }
+
+  private rowToUser(row: DatabaseRow): User {
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      email: String(row.email),
+      emailVerified: Boolean(row.email_verified),
+      createdAt: this.toIso(row.created_at)
+    };
+  }
+
+  private rowToUserWithPassword(row: DatabaseRow): UserWithPassword {
+    return {
+      ...this.rowToUser(row),
+      passwordHash: String(row.password_hash)
+    };
+  }
+
+  private rowToWorkspace(row: DatabaseRow, role: WorkspaceRole): Workspace {
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      slug: String(row.slug),
+      role,
       createdAt: this.toIso(row.created_at)
     };
   }

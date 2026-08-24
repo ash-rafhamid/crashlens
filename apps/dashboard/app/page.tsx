@@ -5,5 +5,5 @@ import { redirect } from "next/navigation";
 export default async function HomePage() {
   const session = await readDashboardSession();
   if (!session) redirect("/login");
-  return <IssueDashboard adminEmail={session.email} />;
+  return <IssueDashboard userEmail={session.user.email} />;
 }

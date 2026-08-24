@@ -1,15 +1,25 @@
 import "server-only";
+import { getDashboardSessionToken } from "./session";
 
 const apiUrl = process.env.CRASHLENS_API_URL ?? "http://localhost:4000";
-const adminApiKey = process.env.CRASHLENS_ADMIN_KEY ?? "crashlens_admin_key_change_me";
 
-export async function backendRequest(path: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(`${apiUrl}${path}`, {
+export async function publicBackendRequest(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(apiUrl + path, {
     ...init,
     cache: "no-store",
     headers: {
       "content-type": "application/json",
-      "x-crashlens-admin-key": adminApiKey,
+      ...init.headers
+    }
+  });
+}
+
+export async function backendRequest(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = await getDashboardSessionToken();
+  return publicBackendRequest(path, {
+    ...init,
+    headers: {
+      authorization: token ? "Bearer " + token : "",
       ...init.headers
     }
   });
@@ -25,7 +35,7 @@ export async function proxyBackend(path: string, init?: RequestInit): Promise<Re
     });
   } catch {
     return Response.json(
-      { error: "CrashLens API is unavailable. Start the API on port 4000." },
+      { error: "CrashLens API is temporarily unavailable." },
       { status: 502 }
     );
   }
