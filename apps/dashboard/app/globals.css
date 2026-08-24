@@ -1154,3 +1154,81 @@ code, pre { font-family: var(--font-geist-mono), "SFMono-Regular", Consolas, mon
   .event-section dl > div { grid-template-columns: 100px 1fr; }
   .breadcrumbs > div { grid-template-columns: 8px 64px 1fr; }
 }
+/* Functional workspace navigation and onboarding */
+.side-nav .nav-button.active { color: #fff; background: #28282d; box-shadow: inset 2px 0 #8175e8; }
+.side-nav .nav-button.active .nav-dot { border-color: #9d94ed; background: #9d94ed; }
+.side-nav .nav-button b {
+  min-width: 20px;
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: 8px;
+  color: #b5b5bc;
+  background: #333338;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 650;
+}
+.side-nav .nav-button:disabled { cursor: default; opacity: .48; }
+
+.account-menu { position: relative; }
+.account-popover {
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  z-index: 30;
+  width: 238px;
+  padding: 13px;
+  display: grid;
+  gap: 7px;
+  border: 1px solid #d7d7dc;
+  border-radius: 6px;
+  background: #fbfbfc;
+  box-shadow: 0 14px 34px #2020241f;
+}
+.account-popover span { color: #85858d; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
+.account-popover strong { overflow: hidden; color: #34343a; font-size: 11px; text-overflow: ellipsis; }
+.header-actions .account-popover button {
+  min-height: 34px;
+  margin-top: 5px;
+  color: #54545d;
+  border-color: #d3d3d8;
+  background: #f1f1f3;
+}
+.header-actions .account-popover button:hover { color: #28282d; border-color: #bcbcc3; background: #e8e8eb; }
+
+.empty-workspace {
+  width: min(720px, 100%);
+  margin: 74px auto 0;
+  padding: 54px 50px 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfc;
+  text-align: center;
+  box-shadow: 0 1px 2px #15151a08;
+}
+.empty-workspace-mark {
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: #f1efff;
+  background: #625ad8;
+  font-size: 16px;
+  font-weight: 750;
+}
+.empty-workspace > p:first-of-type { margin: 0 0 12px; color: #8175e8; font-size: 9px; font-weight: 720; letter-spacing: .13em; }
+.empty-workspace h2 { margin: 0; color: #29292e; font-size: 24px; font-weight: 650; letter-spacing: -.025em; }
+.empty-workspace .empty-workspace-copy { max-width: 480px; margin: 13px auto 24px; color: #73737c; font-size: 12px; line-height: 1.65; }
+.empty-workspace > button { min-height: 39px; padding: 0 16px; border: 1px solid #625ad8; border-radius: 5px; color: #fff; background: #625ad8; font-size: 11px; font-weight: 650; }
+.empty-workspace > button:hover { border-color: #5049bd; background: #5049bd; }
+.onboarding-steps { margin-top: 42px; padding-top: 24px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; border-top: 1px solid var(--line); }
+.onboarding-steps span { display: flex; align-items: center; gap: 9px; color: #6f6f78; font-size: 10px; text-align: left; }
+.onboarding-steps b { width: 23px; height: 23px; display: grid; place-items: center; flex: 0 0 23px; border-radius: 50%; color: #625ad8; background: #eeecff; font-size: 9px; }
+
+@media (max-width: 720px) {
+  .empty-workspace { margin-top: 38px; padding: 38px 22px 28px; }
+  .onboarding-steps { grid-template-columns: 1fr; }
+  .header-actions .account-menu .avatar { display: grid; }
+}

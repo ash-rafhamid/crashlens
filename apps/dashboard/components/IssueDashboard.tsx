@@ -104,8 +104,14 @@ export function IssueDashboard({ userEmail }: { userEmail: string }) {
   const [projectActionPending, setProjectActionPending] = useState(false);
   const [projectActionError, setProjectActionError] = useState<string | null>(null);
   const [revealedKey, setRevealedKey] = useState<{ label: string; value: string } | null>(null);
+  const [activeSection, setActiveSection] = useState<"issues" | "activity">("issues");
+  const [accountOpen, setAccountOpen] = useState(false);
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
+
+  useEffect(() => {
+    if (window.location.hash === "#alerts") setActiveSection("activity");
+  }, []);
 
   const loadProjects = useCallback(async () => {
     const response = await fetch("/api/projects", { cache: "no-store" });
@@ -116,6 +122,7 @@ export function IssueDashboard({ userEmail }: { userEmail: string }) {
     if (!response.ok) throw new Error("Could not load projects");
     const body = (await response.json()) as { projects: Project[] };
     setProjects(body.projects);
+    if (!body.projects.length) setLoading(false);
     setSelectedProjectId((current) => {
       if (current && body.projects.some((project) => project.id === current)) return current;
       const remembered = window.localStorage.getItem("crashlens-project");
@@ -177,6 +184,22 @@ export function IssueDashboard({ userEmail }: { userEmail: string }) {
     const timer = window.setInterval(() => void loadDashboard(true), 3_000);
     return () => window.clearInterval(timer);
   }, [loadDashboard, selectedProjectId]);
+
+  useEffect(() => {
+    if (!accountOpen) return;
+    function closeAccountMenu(event: PointerEvent) {
+      if (!(event.target instanceof Element) || !event.target.closest(".account-menu")) setAccountOpen(false);
+    }
+    function closeAccountMenuWithKeyboard(event: KeyboardEvent) {
+      if (event.key === "Escape") setAccountOpen(false);
+    }
+    document.addEventListener("pointerdown", closeAccountMenu);
+    document.addEventListener("keydown", closeAccountMenuWithKeyboard);
+    return () => {
+      document.removeEventListener("pointerdown", closeAccountMenu);
+      document.removeEventListener("keydown", closeAccountMenuWithKeyboard);
+    };
+  }, [accountOpen]);
 
   useEffect(() => {
     const issueId = selected?.id;
@@ -270,6 +293,14 @@ export function IssueDashboard({ userEmail }: { userEmail: string }) {
     window.location.assign("/login");
   }
 
+  function showSection(section: "issues" | "activity") {
+    if (!selectedProjectId) return;
+    setActiveSection(section);
+    const targetId = section === "issues" ? "issues" : "alerts";
+    window.history.replaceState(null, "", `#${targetId}`);
+    document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   const visibleIssues = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return issues.filter((issue) => {
@@ -286,8 +317,8 @@ export function IssueDashboard({ userEmail }: { userEmail: string }) {
         <a className="logo" href="#"><span className="logo-mark">C</span><span>CrashLens</span></a>
         <nav className="side-nav">
           <p>Workspace</p>
-          <a className="active" href="#issues"><span className="nav-dot" /> Issues <b>{stats.unresolvedIssues}</b></a>
-          <a href="#alerts"><span className="nav-dot" /> Activity <b>{alerts.length}</b></a>
+          <button type="button" className={`nav-button ${activeSection === "issues" ? "active" : ""}`} disabled={!selectedProjectId} onClick={() => showSection("issues")}><span className="nav-dot" /> Issues <b>{stats.unresolvedIssues}</b></button>
+          <button type="button" className={`nav-button ${activeSection === "activity" ? "active" : ""}`} disabled={!selectedProjectId} onClick={() => showSection("activity")}><span className="nav-dot" /> Activity <b>{alerts.length}</b></button>
           <p>Configuration</p>
           <button className="nav-button" onClick={() => setSettingsOpen(true)}><span className="nav-dot" /> Project settings</button>
         </nav>
@@ -300,6 +331,7 @@ export function IssueDashboard({ userEmail }: { userEmail: string }) {
               onChange={(event) => setSelectedProjectId(event.target.value)}
               aria-label="Current project"
             >
+              {!projects.length && <option value="">No project yet</option>}
               {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
           </label>
@@ -309,11 +341,24 @@ export function IssueDashboard({ userEmail }: { userEmail: string }) {
 
       <main className="main-content">
         <header>
-          <div className="page-heading"><p className="breadcrumb">{selectedProject?.name ?? "Loading projects…"}</p><h1>Issues</h1></div>
-          <div className="header-actions"><span className="live"><i /> Live</span><a href={testShopUrl} target="_blank" rel="noreferrer">Open test app</a><button className="avatar" title={`Sign out ${userEmail}`} aria-label="Sign out" onClick={() => void logout()}>{userEmail.slice(0, 2).toUpperCase()}</button></div>
+          <div className="page-heading"><p className="breadcrumb">{selectedProject?.name ?? (loading ? "Loading projects…" : "No project selected")}</p><h1>{selectedProjectId ? "Issues" : "Workspace"}</h1></div>
+          <div className="header-actions"><span className="live"><i /> Live</span>{selectedProject?.slug === "cartly-shop" && <a href={testShopUrl} target="_blank" rel="noreferrer">Open demo shop</a>}<div className="account-menu"><button className="avatar" title="Open account menu" aria-label="Open account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((current) => !current)}>{userEmail.slice(0, 2).toUpperCase()}</button>{accountOpen && <div className="account-popover"><span>Signed in as</span><strong>{userEmail}</strong><button onClick={() => void logout()}>Sign out</button></div>}</div></div>
         </header>
 
         {error && <div className="connection-error"><strong>API unavailable</strong><span>{error}</span><code>npm run dev</code></div>}
+
+        {!error && !loading && !projects.length && (
+          <section className="empty-workspace">
+            <span className="empty-workspace-mark">C</span>
+            <p>WELCOME TO CRASHLENS</p>
+            <h2>Create your first monitored project</h2>
+            <p className="empty-workspace-copy">A project gives your website its own SDK key and keeps its errors separate from every other application.</p>
+            <button onClick={() => setSettingsOpen(true)}>Create first project</button>
+            <div className="onboarding-steps"><span><b>1</b>Create a project</span><span><b>2</b>Add the browser SDK</span><span><b>3</b>Trigger a test error</span></div>
+          </section>
+        )}
+
+        {!!selectedProjectId && <>
 
         <section className="health-strip" aria-label="Project health">
           <span><strong>{stats.unresolvedIssues}</strong> unresolved</span>
@@ -368,6 +413,7 @@ export function IssueDashboard({ userEmail }: { userEmail: string }) {
             {!alerts.length && <div className="alerts-empty">No activity yet.</div>}
           </div>
         </section>
+        </>}
       </main>
 
       {settingsOpen && (
