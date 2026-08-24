@@ -269,7 +269,7 @@ export class PostgresIssueRepository implements IssueRepository {
       const workspaceResult = await client.query(
         `INSERT INTO workspaces (id, name, slug, owner_user_id)
          VALUES ($1, $2, $3, $4)
-         RETURNING id, name, slug, workspace_id, created_at`,
+         RETURNING id, name, slug, created_at`,
         [workspaceId, input.workspaceName, input.workspaceSlug, userId]
       );
       await client.query(
