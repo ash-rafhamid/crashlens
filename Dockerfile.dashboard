@@ -1,0 +1,24 @@
+FROM node:22-alpine AS dependencies
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/dashboard/package.json apps/dashboard/package.json
+COPY apps/demo-shop/package.json apps/demo-shop/package.json
+COPY packages/browser-sdk/package.json packages/browser-sdk/package.json
+RUN npm ci
+
+FROM dependencies AS builder
+WORKDIR /app
+COPY tsconfig.base.json ./
+COPY apps/dashboard apps/dashboard
+RUN npm run build --workspace @crashlens/dashboard
+
+FROM node:22-alpine AS runtime
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
+WORKDIR /app
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/.next/static ./apps/dashboard/.next/static
+USER nextjs
+EXPOSE 3000
+CMD ["node", "apps/dashboard/server.js"]

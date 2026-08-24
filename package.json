@@ -1,0 +1,27 @@
+{
+  "name": "crashlens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A portfolio-ready error monitoring platform with a browser SDK, Express API, and Next.js dashboard.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build:sdk": "npm run build --workspace @crashlens/browser-sdk",
+    "dev": "npm run build:sdk && concurrently --kill-others --names API,DASHBOARD,SHOP --prefix-colors blue,magenta,green \"npm run dev --workspace @crashlens/api\" \"npm run dev --workspace @crashlens/dashboard\" \"npm run dev --workspace @crashlens/demo-shop\"",
+    "build": "npm run build:sdk && npm run build --workspace @crashlens/api && npm run build --workspace @crashlens/dashboard && npm run build --workspace @crashlens/demo-shop",
+    "check": "npm run typecheck && npm test && npm run build",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run build:sdk && npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

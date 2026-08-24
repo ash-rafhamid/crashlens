@@ -1,0 +1,87 @@
+name: crashlens
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: crashlens
+      POSTGRES_USER: crashlens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "5432:5432"
+    volumes:
+      - crashlens_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crashlens -d crashlens"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgresql://crashlens:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/crashlens
+      CRASHLENS_DEMO_API_KEY: ${CRASHLENS_DEMO_API_KEY:?Set CRASHLENS_DEMO_API_KEY in .env}
+      CRASHLENS_ADMIN_KEY: ${CRASHLENS_ADMIN_KEY:?Set CRASHLENS_ADMIN_KEY in .env}
+      CRASHLENS_ALERT_WEBHOOK_URL: ${CRASHLENS_ALERT_WEBHOOK_URL:-}
+      CRASHLENS_ALERT_WEBHOOK_SECRET: ${CRASHLENS_ALERT_WEBHOOK_SECRET:-}
+      CORS_ORIGINS: http://localhost:3000,http://localhost:3001
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:4000/health"]
+      interval: 10s
+      timeout: 4s
+      retries: 10
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    restart: unless-stopped
+    environment:
+      CRASHLENS_API_URL: http://api:4000
+      CRASHLENS_ADMIN_KEY: ${CRASHLENS_ADMIN_KEY:?Set CRASHLENS_ADMIN_KEY in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      DASHBOARD_ADMIN_EMAIL: ${DASHBOARD_ADMIN_EMAIL:-admin@crashlens.local}
+      DASHBOARD_ADMIN_PASSWORD: ${DASHBOARD_ADMIN_PASSWORD:?Set DASHBOARD_ADMIN_PASSWORD in .env}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/login"]
+      interval: 10s
+      timeout: 4s
+      retries: 10
+
+  demo-shop:
+    build:
+      context: .
+      dockerfile: Dockerfile.demo
+      args:
+        VITE_CRASHLENS_API_URL: http://localhost:4000
+        VITE_CRASHLENS_API_KEY: ${CRASHLENS_DEMO_API_KEY:?Set CRASHLENS_DEMO_API_KEY in .env}
+    restart: unless-stopped
+    ports:
+      - "3001:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 4s
+      retries: 10
+
+volumes:
+  crashlens_postgres:

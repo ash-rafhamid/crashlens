@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.next/
+coverage/
+*.log
+.env
+.env.local
+.env.*.local
+!.env.example
+.DS_Store
+.data/
+.docker-config/
+*.tsbuildinfo

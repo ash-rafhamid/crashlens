@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+services:
+  - type: web
+    name: crashlens-api
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci && npm run build --workspace @crashlens/api
+    startCommand: npm run start --workspace @crashlens/api
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: CRASHLENS_ADMIN_KEY
+        generateValue: true
+      - key: CRASHLENS_DEMO_API_KEY
+        generateValue: true
