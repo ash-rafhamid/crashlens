@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build:sdk": "npm run build --workspace @crashlens/browser-sdk",
+    "build:sdk": "npm run build --workspace @ash_rafhamid/crashlens-browser-sdk",
     "dev": "npm run build:sdk && concurrently --kill-others --names API,DASHBOARD,SHOP --prefix-colors blue,magenta,green \"npm run dev --workspace @crashlens/api\" \"npm run dev --workspace @crashlens/dashboard\" \"npm run dev --workspace @crashlens/demo-shop\"",
     "build": "npm run build:sdk && npm run build --workspace @crashlens/api && npm run build --workspace @crashlens/dashboard && npm run build --workspace @crashlens/demo-shop",
     "check": "npm run typecheck && npm test && npm run build",

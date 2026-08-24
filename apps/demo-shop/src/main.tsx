@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import CrashLens from "@crashlens/browser-sdk";
+import CrashLens from "@ash_rafhamid/crashlens-browser-sdk";
 import App from "./App";
 import "./styles.css";
 

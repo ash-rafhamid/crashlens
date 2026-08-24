@@ -1,5 +1,5 @@
 {
-  "name": "@crashlens/browser-sdk",
+  "name": "@ash_rafhamid/crashlens-browser-sdk",
   "version": "0.1.0",
   "description": "Browser error reporting SDK for CrashLens",
   "type": "module",
@@ -18,6 +18,15 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "keywords": ["error-monitoring", "observability", "typescript", "sdk"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ash-rafhamid/crashlens.git",
+    "directory": "packages/browser-sdk"
+  },
+  "homepage": "https://github.com/ash-rafhamid/crashlens#readme",
+  "bugs": {
+    "url": "https://github.com/ash-rafhamid/crashlens/issues"
+  },
   "license": "MIT",
   "publishConfig": {
     "access": "public"

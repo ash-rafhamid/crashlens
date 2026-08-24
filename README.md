@@ -90,7 +90,7 @@ See [the deployment guide](docs/DEPLOYMENT.md) for the complete environment and 
 Create a project from **Project settings** in the dashboard and copy the SDK key when it is shown. Then initialize the SDK in the application you want to monitor:
 
 ```ts
-import CrashLens from "@crashlens/browser-sdk";
+import CrashLens from "@ash_rafhamid/crashlens-browser-sdk";
 
 CrashLens.init({
   apiKey: "cl_live_project_key",

@@ -24,7 +24,7 @@ npm run check
 When changing the browser SDK, also inspect the package contents:
 
 ```bash
-npm pack --workspace @crashlens/browser-sdk --dry-run
+npm pack --workspace @ash_rafhamid/crashlens-browser-sdk --dry-run
 ```
 
 Please include tests for behavior changes and update the relevant documentation when an API, environment variable, or deployment step changes.

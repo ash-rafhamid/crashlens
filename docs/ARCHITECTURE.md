@@ -8,7 +8,7 @@ A customer sees a broken payment page, but the developer cannot reproduce it. Cr
 
 ```text
 Monitored website
-  └─ @crashlens/browser-sdk
+  └─ @ash_rafhamid/crashlens-browser-sdk
        ├─ watches window.error and unhandledrejection
        ├─ records recent click breadcrumbs
        └─ POST /api/v1/events + public project SDK key

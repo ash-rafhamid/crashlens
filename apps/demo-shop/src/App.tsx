@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import CrashLens, { type BrowserInfo } from "@crashlens/browser-sdk";
+import CrashLens, { type BrowserInfo } from "@ash_rafhamid/crashlens-browser-sdk";
 
 interface Product {
   name: string;

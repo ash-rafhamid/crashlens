@@ -123,8 +123,8 @@ Before publishing, change the package scope to an npm username or organization y
 
 ```bash
 npm login
-npm run build --workspace @crashlens/browser-sdk
-npm publish --workspace @crashlens/browser-sdk --access public
+npm run build --workspace @ash_rafhamid/crashlens-browser-sdk
+npm publish --workspace @ash_rafhamid/crashlens-browser-sdk --access public
 ```
 
 Publishing is not required for the hosted demo because the demo shop consumes the workspace package from the monorepo.

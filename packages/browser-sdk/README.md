@@ -6,16 +6,16 @@ It captures uncaught errors and unhandled promise rejections automatically. Appl
 
 ## Installation
 
-This package currently belongs to the CrashLens npm workspace and has not been published to the public registry. After choosing an npm scope you own, install the published package with:
+Install the public package with:
 
 ```bash
-npm install @your-scope/crashlens-browser
+npm install @ash_rafhamid/crashlens-browser-sdk
 ```
 
 ## Setup
 
 ```ts
-import CrashLens from "@your-scope/crashlens-browser";
+import CrashLens from "@ash_rafhamid/crashlens-browser-sdk";
 
 CrashLens.init({
   apiKey: "cl_live_project_key",
@@ -55,12 +55,9 @@ try {
 
 `captureException` never throws because monitoring should not break the monitored application. It returns `true` when the API accepts the event and `false` when reporting is unavailable.
 
-## Publish under your own scope
+## Publishing
 
-1. Change `name` in this package's `package.json` to a scope you own, such as `@your-npm-username/crashlens-browser`.
-2. Build and test the workspace.
-3. Review the files that npm will publish.
-4. Publish the scoped package publicly.
+Build and test the workspace, review the package files, and publish it publicly.
 
 ```bash
 cd packages/browser-sdk
