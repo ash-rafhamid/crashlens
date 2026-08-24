@@ -113,7 +113,7 @@ export class PostgresIssueRepository implements IssueRepository {
     await this.pool.query(
       `INSERT INTO projects (id, name, slug, api_key_hash)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (api_key_hash) DO NOTHING`,
+       ON CONFLICT DO NOTHING`,
       [randomUUID(), "Demo Shopping Website", "cartly-shop", this.hashKey(this.demoApiKey)]
     );
   }
