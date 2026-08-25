@@ -4,6 +4,13 @@ CrashLens is a small, self-hosted error-monitoring system for browser applicatio
 
 The repository includes the SDK, ingestion API, dashboard, and an optional demo shop. The demo shop is only a test client; real applications connect to CrashLens in the same way through the SDK.
 
+## Live project
+
+- [CrashLens dashboard](https://crashlens-dashboard-six.vercel.app)
+- [Demo shop](https://crashlens-demo-shop.vercel.app)
+- [API health check](https://crashlens-api.vercel.app/health)
+- [Browser SDK on npm](https://www.npmjs.com/package/@ash_rafhamid/crashlens-browser-sdk)
+
 ## What it captures
 
 - Uncaught JavaScript errors and unhandled promise rejections
@@ -115,7 +122,7 @@ try {
 }
 ```
 
-The SDK currently ships as a workspace package in this repository. Before publishing it to npm, change the package scope to an npm username or organization you own. The package-specific notes are in [packages/browser-sdk/README.md](packages/browser-sdk/README.md).
+The SDK is published publicly as [`@ash_rafhamid/crashlens-browser-sdk`](https://www.npmjs.com/package/@ash_rafhamid/crashlens-browser-sdk). Its source code and complete usage notes are in [packages/browser-sdk/README.md](packages/browser-sdk/README.md).
 
 ## Verify the event flow
 
@@ -154,7 +161,7 @@ Dashboard       Vercel
 API             Vercel
 Database        Neon PostgreSQL
 Demo shop       Vercel (optional)
-Browser SDK     npm (optional until public use)
+Browser SDK     npm (public)
 ```
 
 All applications can be built from the same GitHub repository. Vercel treats the dashboard, API, and demo shop as separate projects with different root directories.
